@@ -8,10 +8,7 @@ import com.uber.tchannel.messages.RawResponse;
 
 import java.net.InetAddress;
 import java.net.UnknownHostException;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.Executors;
-import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.TimeUnit;
+import java.util.concurrent.*;
 
 /**
  *
@@ -19,10 +16,10 @@ import java.util.concurrent.TimeUnit;
 public class DirectorImpl implements Director {
    private final TChannel _channel;
    private boolean _registered;
-    private  InetAddress _registrarAddress;
+   private  InetAddress _registrarAddress;
    private int _registrarPort;
    private final ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(1);
-
+   private ScheduledFuture<?> _heartbeatService;
 
     private DirectorImpl(String name, InetAddress address, int port) {
         _channel = new TChannel.Builder(name)
@@ -31,21 +28,13 @@ public class DirectorImpl implements Director {
                                 .build();
     }
 
-    /**
-     *
-     * @param directorName
-     * @param port
-     * @throws UnknownHostException
-     */
     private DirectorImpl(String directorName, int port) throws UnknownHostException {
         this(directorName, InetAddress.getLocalHost(), port);
     }
 
-
     private DirectorImpl(int port) throws UnknownHostException {
         this("director", port);
     }
-
 
     private void register(int port) throws UnknownHostException {
         register(InetAddress.getByName(null), port);
@@ -100,6 +89,10 @@ public class DirectorImpl implements Director {
     }
 
     public boolean disconnect() throws Exception{
+        if (!_registered) {
+            throw new Exception("Not registered");
+        }
+        _heartbeatService.cancel(false);
         SubChannel disconnectChannel = _channel.makeSubChannel("server");
         RawRequest request = new RawRequest.Builder("server", "disconnect")
                 .setHeader("Disconnect").build();
@@ -121,14 +114,14 @@ public class DirectorImpl implements Director {
     }
 
     private void scheduleHeartbeats() {
-        SubChannel hearbeatChannel = _channel.makeSubChannel("server");
+        SubChannel heartbeatChannel = _channel.makeSubChannel("server");
         RawRequest request = new RawRequest.Builder("server", "register")
                 .setHeader("Heartbeat")
                 .setBody("server:" + _channel.getHost().toString() + ";port:" + _channel.getPort() + ";services:")
                 .build();
 
         Runnable hearbeatTask = () -> {
-            TFuture<RawResponse> future = hearbeatChannel.send(request, _registrarAddress, _registrarPort);
+            TFuture<RawResponse> future = heartbeatChannel.send(request, _registrarAddress, _registrarPort);
             try (RawResponse response = future.get()) {
                 if (!response.isError()) {
                     System.out.println(String.format("Response received: response code: %s, header: %s, body: %s",
@@ -145,7 +138,7 @@ public class DirectorImpl implements Director {
                 e.printStackTrace();
             }
         };
-        scheduler.schedule(hearbeatTask, 8,  TimeUnit.SECONDS);
+        _heartbeatService = scheduler.schedule(hearbeatTask, 8,  TimeUnit.SECONDS);
     }
 
 

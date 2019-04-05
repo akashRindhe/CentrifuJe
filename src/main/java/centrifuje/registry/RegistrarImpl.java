@@ -4,8 +4,6 @@ import com.uber.tchannel.api.SubChannel;
 import com.uber.tchannel.api.TChannel;
 import com.uber.tchannel.messages.RawRequest;
 
-import java.net.UnknownHostException;
-
 class RegistrarImpl implements Registrar {
 
 
