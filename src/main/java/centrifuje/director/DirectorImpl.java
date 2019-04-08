@@ -1,5 +1,7 @@
 package centrifuje.director;
 
+import centrifuje.service.FileServiceProvider;
+import centrifuje.service.ServiceProvider;
 import com.uber.tchannel.api.SubChannel;
 import com.uber.tchannel.api.TChannel;
 import com.uber.tchannel.api.TFuture;
@@ -7,7 +9,9 @@ import com.uber.tchannel.messages.RawRequest;
 import com.uber.tchannel.messages.RawResponse;
 
 import java.net.InetAddress;
+import java.net.URI;
 import java.net.UnknownHostException;
+import java.util.Map;
 import java.util.concurrent.*;
 
 /**
@@ -18,33 +22,38 @@ public class DirectorImpl implements Director {
    private boolean _registered;
    private  InetAddress _registrarAddress;
    private int _registrarPort;
+   private Map<String, URI> _serviceMappings;
+   private ServiceProvider _serviceProvider;
    private final ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(1);
    private ScheduledFuture<?> _heartbeatService;
 
-    private DirectorImpl(String name, InetAddress address, int port) {
+
+    private DirectorImpl(String name, InetAddress address, int port, ServiceProvider serviceProvider) {
         _channel = new TChannel.Builder(name)
                                 .setServerHost(address)
                                 .setServerPort(port)
                                 .build();
+        _serviceProvider = serviceProvider;
     }
 
-    private DirectorImpl(String directorName, int port) throws UnknownHostException {
-        this(directorName, InetAddress.getLocalHost(), port);
+    private DirectorImpl(String directorName, int port, ServiceProvider serviceProvider) throws UnknownHostException {
+        this(directorName, InetAddress.getLocalHost(), port, serviceProvider);
     }
 
-    private DirectorImpl(int port) throws UnknownHostException {
-        this("director", port);
+    private DirectorImpl(int port, ServiceProvider serviceProvider) throws UnknownHostException {
+        this("director", port, serviceProvider);
     }
 
     private void register(int port) throws UnknownHostException {
-        register(InetAddress.getByName(null), port);
+        register(InetAddress.getLocalHost(), port);
     }
 
-    private boolean register(InetAddress address, int port) {
+    private void register(InetAddress address, int port) {
         boolean result = false;
 
         _registrarAddress = address;
         _registrarPort = port;
+        System.out.println("Server: " + _registrarAddress + " Port: " + _registrarPort);
 
         try {
             SubChannel registerChannel = _channel.makeSubChannel("server");
@@ -79,9 +88,8 @@ public class DirectorImpl implements Director {
             if (!_registered) {
                 _channel.shutdown();
             }
-        } catch(Exception e) {
+        } catch(Exception ignored) {
         }
-        return result;
     }
 
     private void postRegistrationActions() {
@@ -120,7 +128,7 @@ public class DirectorImpl implements Director {
                 .setBody("server:" + _channel.getHost().toString() + ";port:" + _channel.getPort() + ";services:")
                 .build();
 
-        Runnable hearbeatTask = () -> {
+        Runnable heartbeatTask = () -> {
             TFuture<RawResponse> future = heartbeatChannel.send(request, _registrarAddress, _registrarPort);
             try (RawResponse response = future.get()) {
                 if (!response.isError()) {
@@ -138,13 +146,14 @@ public class DirectorImpl implements Director {
                 e.printStackTrace();
             }
         };
-        _heartbeatService = scheduler.schedule(hearbeatTask, 8,  TimeUnit.SECONDS);
+        _heartbeatService = scheduler.schedule(heartbeatTask, 8,  TimeUnit.SECONDS);
     }
 
 
 
+
     public static void main(String[] args) throws Exception {
-        DirectorImpl d = new DirectorImpl(5467);
-         d.register(23123);
+        DirectorImpl d = new DirectorImpl(12312, new FileServiceProvider("asdsa"));
+         d.register(8888);
     }
 }

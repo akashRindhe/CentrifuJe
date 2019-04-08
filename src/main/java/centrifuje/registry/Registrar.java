@@ -1,5 +1,6 @@
 package centrifuje.registry;
 
-interface Registrar extends Runnable {
-
+public interface Registrar  {
+    void start() throws InterruptedException;
+    void stop();
 }
